@@ -1,0 +1,17 @@
+# Lab06 compose template variables:
+# app_name, docker_image, docker_tag, app_port, app_internal_port,
+# app_host, app_env, app_secret_key
+version: "{{ docker_compose_version }}"
+
+services:
+  {{ app_name }}:
+    image: "{{ docker_image }}:{{ docker_tag }}"
+    container_name: "{{ app_name }}"
+    ports:
+      - "{{ app_port }}:{{ app_internal_port }}"
+    environment:
+      HOST: "{{ app_host }}"
+      PORT: "{{ app_internal_port }}"
+      APP_ENV: "{{ app_env }}"
+      APP_SECRET_KEY: "{{ app_secret_key }}"
+    restart: unless-stopped
