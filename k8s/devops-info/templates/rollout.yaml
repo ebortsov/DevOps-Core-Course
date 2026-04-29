@@ -1,0 +1,116 @@
+{{- if .Values.rollout.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "common-lib.fullname" . }}
+  labels:
+    {{- include "devops-info.deploymentLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  minReadySeconds: {{ .Values.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.progressDeadlineSeconds }}
+  selector:
+    matchLabels:
+      {{- include "common-lib.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "devops-info.deploymentLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- $vaultAnnotations := include "devops-info.vaultAnnotations" . }}
+      annotations:
+        checksum/config-file: {{ .Files.Get (printf "files/%s" .Values.configMap.fileName) | sha256sum }}
+        checksum/config-env: {{ toJson .Values.env | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if $vaultAnnotations }}
+        {{- $vaultAnnotations | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "devops-info.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- include "common-lib.podSecurityContext" .Values.securityContext.pod | nindent 8 }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ include "devops-info.fileConfigMapName" . }}
+        - name: data-volume
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "devops-info.persistenceClaimName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "devops-info.envConfigMapName" . }}
+            - secretRef:
+                name: {{ include "devops-info.secretName" . }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: {{ .Values.configMap.mountPath }}
+              readOnly: true
+            - name: data-volume
+              mountPath: {{ .Values.persistence.mountPath }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.probes.startup.enabled }}
+          startupProbe:
+            {{- include "common-lib.httpProbe" .Values.probes.startup | nindent 12 }}
+          {{- end }}
+          {{- if .Values.probes.liveness.enabled }}
+          livenessProbe:
+            {{- include "common-lib.httpProbe" .Values.probes.liveness | nindent 12 }}
+          {{- end }}
+          {{- if .Values.probes.readiness.enabled }}
+          readinessProbe:
+            {{- include "common-lib.httpProbe" .Values.probes.readiness | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- include "common-lib.containerSecurityContext" .Values.securityContext.container | nindent 12 }}
+  strategy:
+    {{- if eq .Values.rollout.strategy "canary" }}
+    canary:
+      steps:
+        {{- $weights := .Values.rollout.canary.weights }}
+        - setWeight: {{ index $weights 0 }}
+        - pause: {}
+        {{- if .Values.rollout.analysis.enabled }}
+        - analysis:
+            templates:
+              - templateName: {{ include "common-lib.fullname" . }}-webcheck
+        {{- end }}
+        {{- range $weight := rest $weights }}
+        - setWeight: {{ $weight }}
+        {{- if ne (int $weight) 100 }}
+        - pause:
+            duration: {{ $.Values.rollout.canary.pauseDuration }}
+        {{- end }}
+        {{- end }}
+    {{- else if eq .Values.rollout.strategy "blueGreen" }}
+    blueGreen:
+      activeService: {{ default (include "common-lib.fullname" .) .Values.rollout.blueGreen.activeServiceName }}
+      previewService: {{ default (printf "%s-preview" (include "common-lib.fullname" .)) .Values.rollout.blueGreen.previewServiceName }}
+      autoPromotionEnabled: {{ .Values.rollout.blueGreen.autoPromotionEnabled }}
+      scaleDownDelaySeconds: {{ .Values.rollout.blueGreen.scaleDownDelaySeconds }}
+      {{- with .Values.rollout.blueGreen.previewReplicaCount }}
+      previewReplicaCount: {{ . }}
+      {{- end }}
+    {{- else }}
+    {{- fail "rollout.strategy must be either canary or blueGreen" }}
+    {{- end }}
+{{- end }}
