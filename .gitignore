@@ -1,1 +1,21 @@
 test
+
+# Terraform files
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+terraform.tfvars
+
+# Sensitive files
+secrets.auto.tfvars
+
+Pulumi.*.yaml
+venv/
+.venv/
+__pycache__/
+
+# Ansible
+*.retry
+.vault_pass
+ansible/inventory/*.pyc
