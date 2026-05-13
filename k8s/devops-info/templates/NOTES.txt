@@ -1,0 +1,24 @@
+1. Inspect the release:
+   helm status {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+2. Check the workload:
+   kubectl get all -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+3. Access the service:
+{{- if eq .Values.service.type "NodePort" }}
+   export NODE_PORT=$(kubectl get svc {{ include "common-lib.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.spec.ports[0].nodePort}')
+   curl http://127.0.0.1:${NODE_PORT}/health
+{{- else }}
+   kubectl port-forward svc/{{ include "common-lib.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+   curl http://127.0.0.1:8080/health
+{{- end }}
+
+4. Verify ConfigMap and PVC mounts:
+{{- if .Values.statefulset.enabled }}
+   kubectl exec sts/{{ include "common-lib.fullname" . }} -n {{ .Release.Namespace }} -- cat {{ .Values.configMap.mountPath }}/{{ .Values.configMap.fileName }}
+   kubectl exec {{ include "common-lib.fullname" . }}-0 -n {{ .Release.Namespace }} -- cat {{ .Values.persistence.mountPath }}/visits
+   kubectl get pvc -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+{{- else }}
+   kubectl exec deploy/{{ include "common-lib.fullname" . }} -n {{ .Release.Namespace }} -- cat {{ .Values.configMap.mountPath }}/{{ .Values.configMap.fileName }}
+   kubectl exec deploy/{{ include "common-lib.fullname" . }} -n {{ .Release.Namespace }} -- cat {{ .Values.persistence.mountPath }}/visits
+{{- end }}
