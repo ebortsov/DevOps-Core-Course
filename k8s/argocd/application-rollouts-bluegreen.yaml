@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-info-bluegreen
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ebortsov/DevOps-Core-Course.git
+    targetRevision: lab14
+    path: k8s/devops-info
+    helm:
+      releaseName: devops-info-bluegreen
+      valueFiles:
+        - values.yaml
+        - values-bluegreen.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rollouts-bluegreen
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,64 @@
+---
+# Package bootstrap is isolated in a block so shared controls
+# (become/tags/recovery) apply consistently to all package tasks.
+- name: Common role | Package management with recovery
+  block:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: "{{ common_apt_cache_valid_time }}"
+
+    - name: Install common packages
+      ansible.builtin.apt:
+        name: "{{ common_packages }}"
+        state: present
+
+  rescue:
+    - name: Recover apt cache update with fix-missing
+      ansible.builtin.command: apt-get update --fix-missing
+      changed_when: true
+
+    - name: Retry common packages installation after recovery
+      ansible.builtin.apt:
+        name: "{{ common_packages }}"
+        state: present
+
+  always:
+    - name: Log completion of common package block
+      ansible.builtin.copy:
+        dest: /tmp/ansible-common-packages.log
+        content: "Common package block completed at {{ ansible_date_time.iso8601 }}\n"
+        mode: "0644"
+
+  become: true
+  tags:
+    - common
+    - packages
+
+# User/timezone tasks are separated from package tasks for selective
+# execution with the `users` tag.
+- name: Common role | User/timezone related tasks
+  block:
+    - name: Read current timezone
+      ansible.builtin.command: timedatectl show --property=Timezone --value
+      register: common_current_timezone
+      changed_when: false
+      when: common_configure_timezone
+
+    - name: Set system timezone
+      ansible.builtin.command: timedatectl set-timezone "{{ common_timezone }}"
+      when:
+        - common_configure_timezone
+        - common_current_timezone.stdout != common_timezone
+
+  always:
+    - name: Log completion of common user/timezone block
+      ansible.builtin.copy:
+        dest: /tmp/ansible-common-users.log
+        content: "Common user/timezone block completed at {{ ansible_date_time.iso8601 }}\n"
+        mode: "0644"
+
+  become: true
+  tags:
+    - common
+    - users
